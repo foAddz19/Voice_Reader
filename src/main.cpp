@@ -1,12 +1,14 @@
 #include <Arduino.h>
+#include <esp_system.h>
 #include <Wire.h>
 #include <U8g2lib.h>
 #include <DFRobotDFPlayerMini.h>
 
 // =====================================================
 // OLED SSD1309 128x64 I2C
-// SDA = GPIO21
-// SCL = GPIO22
+// ESP32-S3 DevKitC-1
+// SDA = GPIO8
+// SCL = GPIO9
 // =====================================================
 
 U8G2_SSD1309_128X64_NONAME2_F_HW_I2C display(
@@ -33,11 +35,11 @@ DFRobotDFPlayerMini player;
 // Buttons
 // =====================================================
 
-#define BTN_1 25
-#define BTN_2 26
-#define BTN_3 27
-#define BTN_4 32
-#define BTN_5 33
+#define BTN_1 4
+#define BTN_2 5
+#define BTN_3 6
+#define BTN_4 7
+#define BTN_5 15
 
 
 // =====================================================
@@ -122,7 +124,7 @@ void showBootScreen() {
   display.print("ระบบกำลังเริ่ม...");
 
   display.setCursor(0, 55);
-  display.print("ESP32 + DFPlayer");
+  display.print("ESP32-S3 + DFPlayer");
 
   display.sendBuffer();
 }
@@ -294,11 +296,11 @@ void setup() {
   pinMode(BTN_4, INPUT_PULLUP);
   pinMode(BTN_5, INPUT_PULLUP);
 
-  // สุ่มจากค่า noise analog
-  randomSeed(analogRead(34));
+  // Hardware RNG
+  randomSeed(esp_random());
 
   // เริ่มจอ I2C
-  Wire.begin(21, 22);
+  Wire.begin(8, 9);
   display.begin();
 
   // ถ้าจอไม่ขึ้น อาจลองเปิดบรรทัดนี้
