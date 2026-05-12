@@ -1,82 +1,19 @@
 #include <Arduino.h>
 #include <esp_system.h>
-#include <Wire.h>
-#include <U8g2lib.h>
 #include <DFRobotDFPlayerMini.h>
 
-// =====================================================
-// OLED SSD1309 128x64 I2C
-// ESP32-S3 DevKitC-1
-// SDA = GPIO8
-// SCL = GPIO9
-// =====================================================
-
-U8G2_SSD1309_128X64_NONAME2_F_HW_I2C display(
-  U8G2_R0,
-  U8X8_PIN_NONE
-);
-
-// ถ้าจอไม่ขึ้น ให้ลองเปลี่ยนเป็นตัวนี้แทน
-// U8G2_SSD1309_128X64_NONAME0_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
-
-
-// =====================================================
-// DFPlayer Mini
-// =====================================================
-
 HardwareSerial dfSerial(2);
-DFRobotDFPlayerMini player;
+DFRobotDFPlayerMini df;
 
-#define DF_RX 16   // ESP32 รับข้อมูลจาก TX ของ DFPlayer
-#define DF_TX 17   // ESP32 ส่งข้อมูลไป RX ของ DFPlayer ผ่าน R 1K
+#define DF_RX 27
+#define DF_TX 26
 
+const int swPins[5] = {4, 5, 18, 19, 15};
+const int fileCount[5] = {5, 5, 5, 5, 5};
+const unsigned long debounceDelay = 250;
+unsigned long lastButtonPress[5] = {0, 0, 0, 0, 0};
 
-// =====================================================
-// Buttons
-// =====================================================
-
-#define BTN_1 4
-#define BTN_2 5
-#define BTN_3 6
-#define BTN_4 7
-#define BTN_5 15
-
-
-// =====================================================
-// Setting
-// =====================================================
-
-const int volumeLevel = 25;   // ระดับเสียง 0 - 30
-const unsigned long debounceDelay = 350;
-
-unsigned long lastPressTime = 0;
-bool isPlaying = false;
-
-
-// =====================================================
-// Category and Words
-// =====================================================
-
-// จำนวนไฟล์เสียงในแต่ละหมวด
-int fileCount[5] = {
-  5,  // 01 สัตว์
-  5,  // 02 ผลไม้
-  5,  // 03 สี
-  5,  // 04 ตัวเลข
-  5   // 05 ทักทาย
-};
-
-// ชื่อหมวดภาษาไทย
-const char* categoryTH[5] = {
-  "สัตว์",
-  "ผลไม้",
-  "สี",
-  "ตัวเลข",
-  "ทักทาย"
-};
-
-// ชื่อหมวดภาษาอังกฤษ
-const char* categoryEN[5] = {
+const char* categoryNames[5] = {
   "Animals",
   "Fruits",
   "Colors",
@@ -84,17 +21,7 @@ const char* categoryEN[5] = {
   "Greetings"
 };
 
-// คำศัพท์ภาษาไทย
-const char* wordsTH[5][5] = {
-  {"แมว", "สุนัข", "นก", "ปลา", "ช้าง"},
-  {"แอปเปิล", "กล้วย", "ส้ม", "มะม่วง", "องุ่น"},
-  {"แดง", "น้ำเงิน", "เขียว", "เหลือง", "ดำ"},
-  {"หนึ่ง", "สอง", "สาม", "สี่", "ห้า"},
-  {"สวัสดี", "ลาก่อน", "ขอบคุณ", "ขอโทษ", "อรุณสวัสดิ์"}
-};
-
-// คำศัพท์ภาษาอังกฤษ
-const char* wordsEN[5][5] = {
+const char* wordNames[5][5] = {
   {"cat", "dog", "bird", "fish", "elephant"},
   {"apple", "banana", "orange", "mango", "grape"},
   {"red", "blue", "green", "yellow", "black"},
@@ -102,264 +29,102 @@ const char* wordsEN[5][5] = {
   {"hello", "goodbye", "thank you", "sorry", "good morning"}
 };
 
-
-// =====================================================
-// Display Functions
-// =====================================================
-
-void displayThaiFont() {
-  display.setFont(u8g2_font_etl16thai_t);
-  display.enableUTF8Print();
-}
-
-void showBootScreen() {
-  display.clearBuffer();
-
-  displayThaiFont();
-
-  display.setCursor(0, 15);
-  display.print("กล่องคำศัพท์");
-
-  display.setCursor(0, 35);
-  display.print("ระบบกำลังเริ่ม...");
-
-  display.setCursor(0, 55);
-  display.print("ESP32-S3 + DFPlayer");
-
-  display.sendBuffer();
-}
-
-void showReadyScreen() {
-  display.clearBuffer();
-
-  displayThaiFont();
-
-  display.setCursor(0, 14);
-  display.print("พร้อมใช้งาน");
-
-  display.setCursor(0, 32);
-  display.print("กดปุ่ม 1-5");
-
-  display.setCursor(0, 50);
-  display.print("สุ่มเสียงคำศัพท์");
-
-  display.sendBuffer();
-}
-
-void showDFPlayerError() {
-  display.clearBuffer();
-
-  displayThaiFont();
-
-  display.setCursor(0, 15);
-  display.print("DFPlayer Error");
-
-  display.setCursor(0, 35);
-  display.print("เช็คสาย / SD Card");
-
-  display.setCursor(0, 55);
-  display.print("ไฟล์ 001.mp3");
-
-  display.sendBuffer();
-}
-
-void showPlayingScreen(int folderNumber, int fileNumber) {
-  int categoryIndex = folderNumber - 1;
-  int wordIndex = fileNumber - 1;
-
-  display.clearBuffer();
-
-  displayThaiFont();
-
-  // บรรทัด 1: หมวด
-  display.setCursor(0, 13);
-  display.print("หมวด: ");
-  display.print(categoryTH[categoryIndex]);
-
-  // บรรทัด 2: คำไทย
-  display.setCursor(0, 31);
-  display.print("คำ: ");
-  display.print(wordsTH[categoryIndex][wordIndex]);
-
-  // บรรทัด 3: คำอังกฤษ
-  display.setFont(u8g2_font_7x14B_tf);
-  display.setCursor(0, 49);
-  display.print(wordsEN[categoryIndex][wordIndex]);
-
-  // บรรทัด 4: สถานะ
-  displayThaiFont();
-  display.setCursor(0, 64);
-  display.print("กำลังเล่น...");
-
-  display.sendBuffer();
-}
-
-void showButtonCategoryScreen(int folderNumber) {
-  int categoryIndex = folderNumber - 1;
-
-  display.clearBuffer();
-
-  displayThaiFont();
-
-  display.setCursor(0, 15);
-  display.print("เลือกหมวด");
-
-  display.setCursor(0, 35);
-  display.print(categoryTH[categoryIndex]);
-
-  display.setFont(u8g2_font_7x14B_tf);
-  display.setCursor(0, 55);
-  display.print(categoryEN[categoryIndex]);
-
-  display.sendBuffer();
-}
-
-
-// =====================================================
-// Button Function
-// =====================================================
-
-bool buttonPressed(int pin) {
-  if (digitalRead(pin) == LOW) {
-    if (millis() - lastPressTime > debounceDelay) {
-      lastPressTime = millis();
-
-      // รอจนปล่อยปุ่ม ป้องกันกดค้างแล้วเล่นซ้ำ
-      while (digitalRead(pin) == LOW) {
-        delay(10);
-      }
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// =====================================================
-// Play Sound
-// =====================================================
-
-void playRandomSound(int folderNumber) {
-  int categoryIndex = folderNumber - 1;
-
-  if (categoryIndex < 0 || categoryIndex > 4) {
-    return;
-  }
-
-  int maxFile = fileCount[categoryIndex];
-  int randomFile = random(1, maxFile + 1);
+void playCategory(int categoryIndex) {
+  int folderNumber = categoryIndex + 1;
+  int fileNumber = random(1, fileCount[categoryIndex] + 1);
 
   Serial.println("================================");
+  Serial.print("SW: ");
+  Serial.print(categoryIndex + 1);
+  Serial.print(" GPIO");
+  Serial.println(swPins[categoryIndex]);
+
+  Serial.print("Category: ");
+  Serial.println(categoryNames[categoryIndex]);
+
   Serial.print("Folder: ");
-  Serial.println(folderNumber);
+  Serial.print(folderNumber);
+  Serial.print("  File: ");
+  Serial.println(fileNumber);
 
-  Serial.print("Category TH: ");
-  Serial.println(categoryTH[categoryIndex]);
+  Serial.print("Path: /");
+  if (folderNumber < 10) {
+    Serial.print("0");
+  }
+  Serial.print(folderNumber);
+  Serial.print("/");
+  if (fileNumber < 100) {
+    Serial.print("0");
+  }
+  if (fileNumber < 10) {
+    Serial.print("0");
+  }
+  Serial.print(fileNumber);
+  Serial.println(".mp3");
 
-  Serial.print("Category EN: ");
-  Serial.println(categoryEN[categoryIndex]);
-
-  Serial.print("File: ");
-  Serial.println(randomFile);
-
-  Serial.print("Word TH: ");
-  Serial.println(wordsTH[categoryIndex][randomFile - 1]);
-
-  Serial.print("Word EN: ");
-  Serial.println(wordsEN[categoryIndex][randomFile - 1]);
+  Serial.print("Show: ");
+  Serial.println(wordNames[categoryIndex][fileNumber - 1]);
   Serial.println("================================");
 
-  showPlayingScreen(folderNumber, randomFile);
-
-  // เล่นไฟล์ในโฟลเดอร์ เช่น /01/003.mp3
-  player.playFolder(folderNumber, randomFile);
-
-  isPlaying = true;
+  df.playFolder(folderNumber, fileNumber);
 }
-
-// =====================================================
-// Setup
-// =====================================================
 
 void setup() {
   Serial.begin(115200);
-  delay(500);
-
-  Serial.println();
-  Serial.println("Vocabulary Sound Box Starting...");
-
-  // ปุ่มแบบ INPUT_PULLUP
-  pinMode(BTN_1, INPUT_PULLUP);
-  pinMode(BTN_2, INPUT_PULLUP);
-  pinMode(BTN_3, INPUT_PULLUP);
-  pinMode(BTN_4, INPUT_PULLUP);
-  pinMode(BTN_5, INPUT_PULLUP);
-
-  // Hardware RNG
-  randomSeed(esp_random());
-
-  // เริ่มจอ I2C
-  Wire.begin(8, 9);
-  display.begin();
-
-  // ถ้าจอไม่ขึ้น อาจลองเปิดบรรทัดนี้
-  // display.setI2CAddress(0x3C * 2);
-
-  display.enableUTF8Print();
-  showBootScreen();
-
   delay(1000);
 
-  // เริ่ม DFPlayer
+  for (int i = 0; i < 5; i++) {
+    pinMode(swPins[i], INPUT_PULLUP);
+  }
+
+  Serial.println("ESP32 DFPlayer Test GPIO26/27");
+
   dfSerial.begin(9600, SERIAL_8N1, DF_RX, DF_TX);
+  delay(1500);
 
-  Serial.println("Starting DFPlayer Mini...");
+  // false helps with some MP3-TF clone modules.
+  if (!df.begin(dfSerial, false)) {
+    Serial.println("DFPlayer begin failed, but try play anyway");
+  } else {
+    Serial.println("DFPlayer online");
+  }
 
-  if (!player.begin(dfSerial)) {
-    Serial.println("DFPlayer Mini not found!");
-    Serial.println("Please check wiring, SD card, and power.");
+  df.volume(25);
+  delay(500);
 
-    showDFPlayerError();
+  randomSeed(esp_random());
 
-    while (true) {
-      delay(1000);
+  Serial.println("Ready: SW1-SW5 play folders 01-05");
+}
+
+void loop() {
+  for (int i = 0; i < 5; i++) {
+    if (digitalRead(swPins[i]) == LOW && millis() - lastButtonPress[i] > debounceDelay) {
+      lastButtonPress[i] = millis();
+      playCategory(i);
+
+      while (digitalRead(swPins[i]) == LOW) {
+        delay(10);
+      }
     }
   }
 
-  Serial.println("DFPlayer Mini Ready!");
+  if (Serial.available()) {
+    char c = Serial.read();
 
-  player.volume(volumeLevel);
-  delay(300);
-
-  showReadyScreen();
-
-  Serial.println("System Ready!");
-}
-
-
-// =====================================================
-// Loop
-// =====================================================
-
-void loop() {
-  if (buttonPressed(BTN_1)) {
-    playRandomSound(1);
-  }
-
-  if (buttonPressed(BTN_2)) {
-    playRandomSound(2);
-  }
-
-  if (buttonPressed(BTN_3)) {
-    playRandomSound(3);
-  }
-
-  if (buttonPressed(BTN_4)) {
-    playRandomSound(4);
-  }
-
-  if (buttonPressed(BTN_5)) {
-    playRandomSound(5);
+    if (c == '1') {
+      playCategory(0);
+    } else if (c == '2') {
+      playCategory(1);
+    } else if (c == '3') {
+      playCategory(2);
+    } else if (c == '4') {
+      playCategory(3);
+    } else if (c == '5') {
+      playCategory(4);
+    } else if (c == '0') {
+      Serial.println("Stop");
+      df.stop();
+    }
   }
 }
