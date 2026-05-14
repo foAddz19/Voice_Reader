@@ -172,7 +172,7 @@ void playCategory(int categoryIndex) {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(900);
 
   for (int i = 0; i < CATEGORY_COUNT; i++) {
     pinMode(swPins[i], INPUT_PULLUP);
